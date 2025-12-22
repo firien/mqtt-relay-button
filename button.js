@@ -1,5 +1,5 @@
 import { createConnection } from "node:net"
-import { packitup, rawString } from "mqtt"
+import { packitup, rawString } from "./mqtt.js"
 import rpio from "rpio"
 
 const pin = 31
