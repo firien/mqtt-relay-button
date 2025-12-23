@@ -1,6 +1,6 @@
 import { createConnection } from "node:net"
-import { packitup, rawString } from "./mqtt.js"
 import rpio from "rpio"
+import { packitup, rawString } from "./mqtt.js"
 
 const pin = 31
 rpio.open(pin, rpio.OUTPUT, rpio.LOW)
@@ -12,7 +12,7 @@ const connection = () => {
   const flags =
     0b10000000 | // user flag
     0b01000000 | // password flag
-    0b00000010   // clean start
+    0b00000010 // clean start
   // flag uint8
   dv.setUint8(1, flags)
   dv.setUint16(2, 60) // keep alive
@@ -72,7 +72,15 @@ const discoveryAndSubscribe = async () => {
       })
     })
   }
-  const socket = await openSocket()
+  let socket
+  try {
+    socket = await openSocket()
+  } catch (err) {
+    console.log(err)
+    setTimeout(discoveryAndSubscribe, 10_000)
+    return
+  }
+
   socket.on("error", (data) => {
     console.error(data)
     socket.destroy()
@@ -82,7 +90,7 @@ const discoveryAndSubscribe = async () => {
     console.debug("closing")
     clearInterval(heartbeat)
     // restart
-    setTimeout(discoveryAndSubscribe, 1000)
+    setTimeout(discoveryAndSubscribe, 10_000)
   })
 
   socket.on("end", () => {
