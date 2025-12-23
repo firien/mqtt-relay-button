@@ -5,6 +5,9 @@ import { packitup, rawString } from "./mqtt.js"
 const pin = 31
 rpio.open(pin, rpio.OUTPUT, rpio.LOW)
 
+const pingInterval = 15_000
+const connectionDelay = 15_000
+
 const connection = () => {
   const protocol = rawString("MQTT")
   const dv = new DataView(new ArrayBuffer(5))
@@ -77,7 +80,7 @@ const discoveryAndSubscribe = async () => {
     socket = await openSocket()
   } catch (err) {
     console.log(err)
-    setTimeout(discoveryAndSubscribe, 10_000)
+    setTimeout(discoveryAndSubscribe, connectionDelay)
     return
   }
 
@@ -90,7 +93,7 @@ const discoveryAndSubscribe = async () => {
     console.debug("closing")
     clearInterval(heartbeat)
     // restart
-    setTimeout(discoveryAndSubscribe, 10_000)
+    setTimeout(discoveryAndSubscribe, connectionDelay)
   })
 
   socket.on("end", () => {
@@ -124,7 +127,7 @@ const discoveryAndSubscribe = async () => {
   const ping = new Uint8Array([0xc0, 0])
   const heartbeat = setInterval(() => {
     socket.write(ping)
-  }, 15000)
+  }, pingInterval)
 }
 
 discoveryAndSubscribe()
