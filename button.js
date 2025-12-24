@@ -2,12 +2,28 @@ import { createConnection } from "node:net"
 import rpio from "rpio"
 import { controlCodes, decodePacket, packitup, rawString } from "./mqtt.js"
 
+const buttonId = process.env.BUTTONID
+const buttons = []
+if (buttonId) {
+  for (let i = 0; i < 4; i++) {
+    buttons[i] = buttonId.replace(/(\d+)$/, (a) => Number(a) + i)
+  }
+} else {
+  console.log("must have button id")
+  process.exit(1)
+}
 const pin = 31
 rpio.open(pin, rpio.OUTPUT, rpio.LOW)
 
 const pingInterval = 15_000
 const connectionDelay = 15_000
 
+const clientId = process.env.CLIENTID
+
+if (!clientId) {
+  console.log("must have unique client id")
+  process.exit(1)
+}
 const connection = () => {
   const protocol = rawString("MQTT")
   const dv = new DataView(new ArrayBuffer(5))
@@ -22,44 +38,38 @@ const connection = () => {
   // properties - hard code to nothing
   dv.setUint8(4, 0)
   // client id name
-  const clientId = rawString(process.env.CLIENTID)
+  const client = rawString(clientId)
   const user = rawString(process.env.USERNAME)
   const pass = rawString(process.env.PASSWORD)
-  return packitup(new Blob([protocol, dv.buffer, clientId, user, pass]), 0x10)
+  return packitup(new Blob([protocol, dv.buffer, client, user, pass]), 0x10)
 }
 
-const id = process.env.DEVICEID
-
-if (!id) {
-  console.log("must have unique id")
-  process.exit(1)
-}
-
-const discovery = () => {
-  const config = rawString(`homeassistant/button/${id}/config`)
+const discovery = (buttonIndex) => {
+  const config = rawString(`homeassistant/button/${buttons[buttonIndex]}/config`)
   const dv = new DataView(new ArrayBuffer(1))
   dv.setUint8(0, 0)
   const json = {
     name: "Door 31",
-    unique_id: id,
+    unique_id: buttons[buttonIndex],
     platform: "button",
-    command_topic: `homeassistant/button/${id}/set`,
+    command_topic: `homeassistant/button/${buttons[buttonIndex]}/set`,
   }
   const button = rawString(JSON.stringify(json), false)
   return packitup(new Blob([config, dv.buffer, button]), 0b110000)
 }
+
 const subscribe = () => {
   const header = new DataView(new ArrayBuffer(3))
   header.setUint16(0, 1470)
   header.setUint8(2, 0)
-  const topic = rawString(`homeassistant/button/${id}/set`)
+  const topic = rawString(`homeassistant/button/${buttons[0]}/set`)
   const dv = new DataView(new ArrayBuffer(1))
   dv.setUint8(0, 2)
   return packitup(new Blob([header.buffer, topic, dv.buffer]), 0x82)
 }
 
 const connectionPacket = await connection().bytes()
-const discoveryPacket = await discovery().bytes()
+const discoveryPacket = await discovery(0).bytes()
 const subscribePacket = await subscribe().bytes()
 
 const discoveryAndSubscribe = async () => {
@@ -101,6 +111,7 @@ const discoveryAndSubscribe = async () => {
 
   socket.on("data", (data) => {
     const { controlCode, topicName, payload } = decodePacket(data)
+    socket.emit("mqtt.response", controlCode)
     if (controlCode === controlCodes[3]) {
       console.log({ controlCode, topicName, payload })
       rpio.write(pin, rpio.HIGH)
@@ -109,17 +120,28 @@ const discoveryAndSubscribe = async () => {
       }, 500)
     }
   })
-  socket.write(connectionPacket)
 
-  setTimeout(() => {
-    console.debug("writing discovery")
-    socket.write(discoveryPacket)
-  }, 300)
+  await new Promise((resolve, reject) => {
+    socket.once("mqtt.response", (evt) => {
+      if (evt === controlCodes[2]) {
+        resolve()
+      }
+    })
+    socket.write(connectionPacket)
+  })
 
-  setTimeout(() => {
-    console.debug("writing subscribe")
+  console.debug("writing discovery")
+  socket.write(discoveryPacket)
+
+  console.debug("writing subscribe")
+  await new Promise((resolve, reject) => {
+    socket.once("mqtt.response", (evt) => {
+      if (evt === controlCodes[9]) {
+        resolve()
+      }
+    })
     socket.write(subscribePacket)
-  }, 600)
+  })
 
   const ping = new Uint8Array([0xc0, 0])
   const heartbeat = setInterval(() => {
