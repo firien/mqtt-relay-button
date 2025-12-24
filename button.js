@@ -1,6 +1,6 @@
 import { createConnection } from "node:net"
 import rpio from "rpio"
-import { packitup, rawString } from "./mqtt.js"
+import { controlCodes, decodePacket, packitup, rawString } from "./mqtt.js"
 
 const pin = 31
 rpio.open(pin, rpio.OUTPUT, rpio.LOW)
@@ -40,11 +40,9 @@ const discovery = () => {
   const dv = new DataView(new ArrayBuffer(1))
   dv.setUint8(0, 0)
   const json = {
-    name: "Garage Door 1",
-    // "device_class": "button",
+    name: "Door 31",
     unique_id: id,
     platform: "button",
-    // "payload_press": "press",
     command_topic: `homeassistant/button/${id}/set`,
   }
   const button = rawString(JSON.stringify(json), false)
@@ -102,14 +100,13 @@ const discoveryAndSubscribe = async () => {
   })
 
   socket.on("data", (data) => {
-    if (data[0] === 0x30) {
-      console.log("trigger relay!")
+    const { controlCode, topicName, payload } = decodePacket(data)
+    if (controlCode === controlCodes[3]) {
+      console.log({ controlCode, topicName, payload })
       rpio.write(pin, rpio.HIGH)
       setTimeout(() => {
         rpio.write(pin, rpio.LOW)
       }, 500)
-    } else {
-      console.debug(data)
     }
   })
   socket.write(connectionPacket)

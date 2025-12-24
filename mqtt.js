@@ -1,5 +1,22 @@
-import { StringDecoder } from 'node:string_decoder'
 
+export const controlCodes = [
+  null,
+  Symbol('CONNECT'),
+  Symbol("CONNACK"),
+  Symbol("PUBLISH"),
+  Symbol("PUBACK"),
+  Symbol("PUBREC"),
+  Symbol("PUBREL"),
+  Symbol("PUBCOMP"),
+  Symbol("SUBSCRIBE"),
+  Symbol("SUBACK"),
+  Symbol("UNSUBSCRIBE"),
+  Symbol("UNSUBACK"),
+  Symbol("PINGREQ"),
+  Symbol("PINGRESP"),
+  Symbol("DISCONNECT"),
+  Symbol("AUTH")
+]
 const variableByteIntDecode = (bytes) => {
   let multiplier = 1
   let value = 0
@@ -20,34 +37,33 @@ const variableByteIntDecode = (bytes) => {
 }
 
 const readFixedHeader = (byte) => {
-  switch (byte >> 4) {
-    case 3:
-      console.log("PUB")
-      break
-    default:
-      console.log("UNKNOWN")
-  }
+  const controlCode = controlCodes[byte >> 4]
   const flags = byte - ((byte >> 4) << 4)
+  return { controlCode, flags }
 }
 
 export const decodePacket = (buffer) => {
   console.debug(buffer)
-  readFixedHeader(buffer[0])
+  const { controlCode, flags } = readFixedHeader(buffer[0])
+  if (controlCode === controlCodes[13]) {
+      return { controlCode }
+  }
   const { value, index } = variableByteIntDecode(buffer.subarray(1, 6))
   console.debug(value)
   const packet = buffer.subarray(1 + index, 1 + index + value)
   const topicLength = packet.readUInt16BE(0)
   // console.log(topicLength)
-  const decoder = new StringDecoder('utf8')
-  const topicName = decoder.write(packet.subarray(2, 2 + topicLength))
+  const decoder = new TextDecoder()
+  const topicName = decoder.decode(packet.subarray(2, 2 + topicLength))
   console.debug(topicName)
   // properties
   const propertyLength = packet[2 + topicLength]
   if (propertyLength > 0) {
     // decode
   }
-  const payload = decoder.write(packet.subarray(2 + topicLength + 1))
+  const payload = decoder.decode(packet.subarray(2 + topicLength + 1))
   console.debug(payload)
+  return { controlCode, topicName, payload }
 }
 
 const variableByteInt = (length) => {
